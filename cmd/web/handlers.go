@@ -26,6 +26,12 @@ type userSignupForm struct {
 	validator.Validator `form:"-"`
 }
 
+type userLoginFrom struct {
+	Email               string `form:"eamil"`
+	Password            string `form:"password"`
+	validator.Validator `form:"_"`
+}
+
 // type snippetCreateForm struct {
 // 	Title       string
 // 	Content     string
@@ -82,63 +88,6 @@ func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	app.render(w, http.StatusOK, "create.tmpl", data)
 }
-
-// Rename this handler to snippetCreatePost.
-// func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request) {
-// 	// Checking if the request method is a POST is now superfluous and can be
-// 	// removed, because this is done automatically by httprouter.
-// 	// title := "O snail"
-// 	// content := "O snail\nClimb Mount Fuji,\nBut slowly, slowly!\n\n– Kobayashi Issa"
-// 	// expires := 7
-
-// 	// id, err := app.snippets.Insert(title, content, expires)
-// 	// if err != nil {
-// 	// 	app.serverError(w, err)
-// 	// 	return
-// 	// }
-// 	// Update the redirect path to use the new clean URL format.
-// 	// http.Redirect(w, r, fmt.Sprintf("/snippet/view/%d", id), http.StatusSeeOther)
-// 	err := r.ParseForm()
-// 	if err != nil {
-// 		app.clientError(w, http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	title := r.PostForm.Get("title")
-// 	content := r.PostForm.Get("content")
-// 	expires, err := strconv.Atoi(r.PostForm.Get("expires"))
-// 	if err != nil {
-// 		app.clientError(w, http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	fieldErrors := make(map[string]string)
-// 	if strings.TrimSpace(title) == "" {
-// 		fieldErrors["title"] = "This filed cannot be blank"
-
-// 	} else if utf8.RuneCountInString(title) > 100 {
-// 		fieldErrors["title"] = "This field cannot be more than 100 characters long"
-// 	}
-// 	if strings.TrimSpace(content) == "" {
-// 		fieldErrors["content"] = "This field cannot be blank"
-// 	}
-
-// 	if expires != 1 && expires != 7 && expires != 365 {
-// 		fieldErrors["expires"] = "This field must equal 1, 7 or 365"
-// 	}
-// 	if len(fieldErrors) > 0 {
-// 		fmt.Fprint(w, fieldErrors)
-// 		return
-// 	}
-
-// 	id, err := app.snippets.Insert(title, content, expires)
-// 	if err != nil {
-// 		app.serverError(w, err)
-// 		return
-// 	}
-
-// 	http.Redirect(w, r, fmt.Sprintf("/snippet/view/%d", id), http.StatusSeeOther)
-// }
 
 func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request) {
 	var form snippetCreateForm
@@ -243,12 +192,61 @@ func (app *application) userSignupPost(w http.ResponseWriter, r *http.Request) {
 	app.sessionManager.Put(r.Context(), "flash", "Your signup was Successful. Please log in ")
 	http.Redirect(w, r, "/user/login", http.StatusSeeOther)
 }
+
 func (app *application) userLogin(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "Display a HTML form for logging in a user...")
+
+	data := app.newTemplateData(r)
+	data.Form = userLoginFrom{}
+	app.render(w, http.StatusOK, "login.tmpl", data)
+
 }
 func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "Authenticate and login the user...")
+	var form userLoginFrom
+
+	err := app.decodePostForm(r, &form)
+
+	if err != nil {
+		app.clientError(w, http.StatusBadRequest)
+		return
+	}
+	form.CheckField(validator.NotBlank(form.Email), "email", "This field cannot be blank")
+	form.CheckField(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
+	form.CheckField(validator.NotBlank(form.Password), "password", "This field cannot be blank")
+
+	if !form.Valid() {
+		data := app.newTemplateData(r)
+		data.Form = form
+		app.render(w, http.StatusUnprocessableEntity, "login.tmpl", data)
+		return
+	}
+	/// "id" at place of _
+	id, err := app.users.Authenticate(form.Email, form.Password)
+	if err != nil {
+		if errors.Is(err, models.ErrInvalidCredentials) {
+			form.AddNonFieldError("Email or Password is incorrect")
+
+			data := app.newTemplateData(r)
+			data.Form = form
+			app.render(w, http.StatusUnprocessableEntity, "login.tmpl", data)
+
+		} else {
+			app.serverError(w, err)
+		}
+		return
+	}
+
+	err = app.sessionManager.RenewToken(r.Context())
+	if err != nil {
+		app.serverError(w, err)
+		return
+	}
+	// Add the ID of the current user to the session, so that they are now
+	// 'logged in'.
+	app.sessionManager.Put(r.Context(), "authenticatedUserID", id)
+	// Redirect the user to the create snippet page.
+	http.Redirect(w, r, "/snippet/create", http.StatusSeeOther)
 }
+
 func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Logout the user...")
 }
