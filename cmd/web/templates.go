@@ -6,6 +6,7 @@ import (
 	"pappu/ui"
 	"path/filepath"
 	"text/template"
+	"time"
 )
 
 type templateData struct {
@@ -51,4 +52,11 @@ func newTemplateCache() (map[string]*template.Template, error) {
 		cache[name] = ts
 	}
 	return cache, nil
+}
+
+func humanDate(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("02 Jan 2006 at 15:04")
 }
