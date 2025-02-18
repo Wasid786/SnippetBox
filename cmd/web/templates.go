@@ -28,6 +28,11 @@ func newTemplateCache() (map[string]*template.Template, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	functions := template.FuncMap{
+		"someFunc": func() string { return "Hello" },
+	}
+
 	for _, page := range pages {
 		name := filepath.Base(page)
 		// Create a slice containing the filepath patterns for the templates we
